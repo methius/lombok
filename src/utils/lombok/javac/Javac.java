@@ -169,13 +169,32 @@ public class Javac {
 	public static final TreeTag CTC_NEG = treeTag("NEG");
 	public static final TreeTag CTC_NOT = treeTag("NOT");
 	public static final TreeTag CTC_COMPL = treeTag("COMPL");
+	public static final TreeTag CTC_BITOR = treeTag("BITOR");
 	public static final TreeTag CTC_BITXOR = treeTag("BITXOR");
+	public static final TreeTag CTC_BITAND = treeTag("BITAND");
+	public static final TreeTag CTC_SIGNED_SHIFT_LEFT = treeTag("SL");
+	public static final TreeTag CTC_SIGNED_SHIFT_RIGHT = treeTag("SR");
 	public static final TreeTag CTC_UNSIGNED_SHIFT_RIGHT = treeTag("USR");
 	public static final TreeTag CTC_MUL = treeTag("MUL");
+	public static final TreeTag CTC_DIV = treeTag("DIV");
+	public static final TreeTag CTC_MOD = treeTag("MOD");
 	public static final TreeTag CTC_PLUS = treeTag("PLUS");
+	public static final TreeTag CTC_MINUS = treeTag("MINUS");
 	public static final TreeTag CTC_EQUAL = treeTag("EQ");
 	public static final TreeTag CTC_PREINC = treeTag("PREINC");
 	public static final TreeTag CTC_PREDEC = treeTag("PREDEC");
+	public static final TreeTag CTC_POSTINC = treeTag("POSTINC");
+	public static final TreeTag CTC_POSTDEC = treeTag("POSTDEC");
+			
+	// ||; &&; ==; !=; <; >; <=; >=
+	public static final TreeTag  CTC_OR = treeTag("OR");
+	public static final TreeTag  CTC_AND = treeTag("AND");
+	public static final TreeTag  CTC_EQ = treeTag("EQ");
+	public static final TreeTag  CTC_NE = treeTag("NE");
+	public static final TreeTag  CTC_LT = treeTag("LT");
+	public static final TreeTag  CTC_GT = treeTag("GT");
+	public static final TreeTag  CTC_LE = treeTag("LE");
+	public static final TreeTag  CTC_GE = treeTag("GE");
 	
 	private static final Method getExtendsClause, getEndPosition;
 	
