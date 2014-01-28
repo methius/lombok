@@ -39,7 +39,7 @@ class DataOnLocalClass1 {
 			@java.lang.Override
 			@java.lang.SuppressWarnings("all")
 			public int hashCode() {
-				final int PRIME = 31;
+				final int PRIME = 59;
 				int result = 1;
 				result = result * PRIME + this.getX();
 				final java.lang.Object $name = this.getName();
@@ -63,7 +63,9 @@ class DataOnLocalClass2 {
 				String name;
 				@java.lang.SuppressWarnings("all")
 				public InnerLocal(@lombok.NonNull final String name) {
-					if (name == null) throw new java.lang.NullPointerException("name");
+					if (name == null) {
+						throw new java.lang.NullPointerException("name");
+					}
 					this.name = name;
 				}
 				@lombok.NonNull
@@ -73,7 +75,9 @@ class DataOnLocalClass2 {
 				}
 				@java.lang.SuppressWarnings("all")
 				public void setName(@lombok.NonNull final String name) {
-					if (name == null) throw new java.lang.NullPointerException("name");
+					if (name == null) {
+						throw new java.lang.NullPointerException("name");
+					}
 					this.name = name;
 				}
 				@java.lang.Override
@@ -95,7 +99,7 @@ class DataOnLocalClass2 {
 				@java.lang.Override
 				@java.lang.SuppressWarnings("all")
 				public int hashCode() {
-					final int PRIME = 31;
+					final int PRIME = 59;
 					int result = 1;
 					final java.lang.Object $name = this.getName();
 					result = result * PRIME + ($name == null ? 0 : $name.hashCode());
@@ -132,7 +136,7 @@ class DataOnLocalClass2 {
 			@java.lang.Override
 			@java.lang.SuppressWarnings("all")
 			public int hashCode() {
-				final int PRIME = 31;
+				final int PRIME = 59;
 				int result = 1;
 				result = result * PRIME + this.getX();
 				return result;

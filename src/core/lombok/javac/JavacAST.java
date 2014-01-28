@@ -24,19 +24,23 @@ package lombok.javac;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 import javax.annotation.processing.Messager;
 import javax.tools.Diagnostic;
-import javax.tools.DiagnosticListener;
 import javax.tools.JavaFileObject;
 
 import lombok.core.AST;
 
 import com.sun.tools.javac.code.Symtab;
+import com.sun.tools.javac.code.Source;
 import com.sun.tools.javac.model.JavacElements;
 import com.sun.tools.javac.model.JavacTypes;
 import com.sun.tools.javac.tree.JCTree;
+import com.sun.tools.javac.tree.JCTree.JCCatch;
+import com.sun.tools.javac.tree.JCTree.JCTry;
+import com.sun.tools.javac.tree.TreeMaker;
 import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import com.sun.tools.javac.tree.JCTree.JCBlock;
 import com.sun.tools.javac.tree.JCTree.JCCatch;
@@ -48,11 +52,8 @@ import com.sun.tools.javac.tree.JCTree.JCIdent;
 import com.sun.tools.javac.tree.JCTree.JCMethodDecl;
 import com.sun.tools.javac.tree.JCTree.JCStatement;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
-import com.sun.tools.javac.tree.TreeMaker;
 import com.sun.tools.javac.util.Context;
-import com.sun.tools.javac.util.JCDiagnostic;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
-import com.sun.tools.javac.util.ListBuffer;
 import com.sun.tools.javac.util.Log;
 import com.sun.tools.javac.util.Name;
 
@@ -63,7 +64,7 @@ import com.sun.tools.javac.util.Name;
 public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 	private final Messager messager;
 	private final JavacElements elements;
-	private final TreeMaker treeMaker;
+	private final JavacTreeMaker treeMaker;
 	private final Symtab symtab;
 	private final JavacTypes javacTypes;
 	private final Log log;
@@ -83,7 +84,7 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		this.messager = messager;
 		this.log = Log.instance(context);
 		this.elements = JavacElements.instance(context);
-		this.treeMaker = TreeMaker.instance(context);
+		this.treeMaker = new JavacTreeMaker(TreeMaker.instance(context));
 		this.symtab = Symtab.instance(context);
 		this.javacTypes = JavacTypes.instance(context);
 		clearChanged();
@@ -113,13 +114,26 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		for (JavacNode child : node.down()) child.traverse(visitor);
 	}
 	
+	@Override public int getSourceVersion() {
+		try {
+			String nm = Source.instance(context).name();
+			int underscoreIdx = nm.indexOf('_');
+			if (underscoreIdx > -1) return Integer.parseInt(nm.substring(underscoreIdx + 1));
+		} catch (Exception ignore) {}
+		return 6;
+	}
+	
+	@Override public int getLatestJavaSpecSupported() {
+		return Javac.getJavaCompilerVersion();
+	}
+	
 	/** @return A Name object generated for the proper name table belonging to this AST. */
 	public Name toName(String name) {
 		return elements.getName(name);
 	}
 	
 	/** @return A TreeMaker instance that you can use to create new AST nodes. */
-	public TreeMaker getTreeMaker() {
+	public JavacTreeMaker getTreeMaker() {
 		treeMaker.at(-1);
 		return treeMaker;
 	}
@@ -210,6 +224,46 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		return putInMap(new JavacNode(this, local, childNodes, kind));
 	}
 	
+	private static boolean JCTRY_RESOURCES_FIELD_INITIALIZED;
+	private static Field JCTRY_RESOURCES_FIELD;
+	
+	@SuppressWarnings("unchecked")
+	private static List<JCTree> getResourcesForTryNode(JCTry tryNode) {
+		if (!JCTRY_RESOURCES_FIELD_INITIALIZED) {
+			try {
+				JCTRY_RESOURCES_FIELD = JCTry.class.getField("resources");
+			} catch (NoSuchFieldException ignore) {
+				// Java 1.6 or lower won't have this at all.
+			} catch (Exception ignore) {
+				// Shouldn't happen. Best thing we can do is just carry on and break on try/catch.
+			}
+			JCTRY_RESOURCES_FIELD_INITIALIZED = true;
+		}
+		
+		if (JCTRY_RESOURCES_FIELD == null) return Collections.emptyList();
+		Object rv = null;
+		try {
+			rv = JCTRY_RESOURCES_FIELD.get(tryNode);
+		} catch (Exception ignore) {}
+		
+		if (rv instanceof List) return (List<JCTree>) rv;
+		return Collections.emptyList();
+	}
+	
+	private JavacNode buildTry(JCTry tryNode) {
+		if (setAndGetAsHandled(tryNode)) return null;
+		List<JavacNode> childNodes = new ArrayList<JavacNode>();
+		for (JCTree varDecl : getResourcesForTryNode(tryNode)) {
+			if (varDecl instanceof JCVariableDecl) {
+				addIfNotNull(childNodes, buildLocalVar((JCVariableDecl) varDecl, Kind.LOCAL));
+			}
+		}
+		addIfNotNull(childNodes, buildStatement(tryNode.body));
+		for (JCCatch jcc : tryNode.catchers) addIfNotNull(childNodes, buildTree(jcc, Kind.STATEMENT));
+		addIfNotNull(childNodes, buildStatement(tryNode.finalizer));
+		return putInMap(new JavacNode(this, tryNode, childNodes, Kind.STATEMENT));
+	}
+	
 	private JavacNode buildInitializer(JCBlock initializer) {
 		if (setAndGetAsHandled(initializer)) return null;
 		List<JavacNode> childNodes = new ArrayList<JavacNode>();
@@ -251,6 +305,7 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		if (statement instanceof JCAnnotation) return null;
 		if (statement instanceof JCClassDecl) return buildType((JCClassDecl)statement);
 		if (statement instanceof JCVariableDecl) return buildLocalVar((JCVariableDecl)statement, Kind.LOCAL);
+		if (statement instanceof JCTry) return buildTry((JCTry) statement);
 		
 		if (setAndGetAsHandled(statement)) return null;
 		
@@ -258,9 +313,18 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 	}
 	
 	private JavacNode drill(JCTree statement) {
-		List<JavacNode> childNodes = new ArrayList<JavacNode>();
-		for (FieldAccess fa : fieldsOf(statement.getClass())) childNodes.addAll(buildWithField(JavacNode.class, statement, fa));
-		return putInMap(new JavacNode(this, statement, childNodes, Kind.STATEMENT));
+		try {
+			List<JavacNode> childNodes = new ArrayList<JavacNode>();
+			for (FieldAccess fa : fieldsOf(statement.getClass())) childNodes.addAll(buildWithField(JavacNode.class, statement, fa));
+			return putInMap(new JavacNode(this, statement, childNodes, Kind.STATEMENT));
+		} catch (OutOfMemoryError oome) {
+			String msg = oome.getMessage();
+			if (msg == null) msg = "(no original message)";
+			OutOfMemoryError newError = new OutOfMemoryError(getFileName() + "@pos" + statement.getPreferredPosition() + ": " + msg);
+			// We could try to set the stack trace of the new exception to the same one as the old exception, but this costs memory,
+			// and we're already in an extremely fragile situation in regards to remaining heap space, so let's not do that.
+			throw newError;
+		}
 	}
 	
 	/** For javac, both JCExpression and JCStatement are considered as valid children types. */
@@ -277,24 +341,13 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 		if (node != null) nodes.add(node);
 	}
 	
-	private static final Field JAVAC7_DEFERRED_DIAGNOSTICS;
-	
-	static {
-		Field f = null;
-		try {
-			f = Log.class.getField("deferredDiagnostics");
-			if (!ListBuffer.class.isAssignableFrom(f.getType())) throw new NoSuchFieldException("deferredDiagnostics does not have the expected type.");
-		} catch (NoSuchFieldException e) {}
-		JAVAC7_DEFERRED_DIAGNOSTICS = f;
-	}
-	
 	/**
 	 * Attempts to remove any compiler errors generated by java whose reporting position is located anywhere between the start and end of the supplied node.
 	 */
 	void removeDeferredErrors(JavacNode node) {
 		DiagnosticPosition pos = node.get().pos();
 		JCCompilationUnit top = (JCCompilationUnit) top().get();
-		removeFromDeferredDiagnostics(pos.getStartPosition(), pos.getEndPosition(top.endPositions));
+		removeFromDeferredDiagnostics(pos.getStartPosition(), Javac.getEndPosition(pos, top));
 	}
 	
 	/** Supply either a position or a node (in that case, position of the node is used) */
@@ -309,7 +362,7 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 			if (pos == null) pos = astObject.pos();
 		}
 		if (pos != null && attemptToRemoveErrorsInRange) {
-			removeFromDeferredDiagnostics(pos.getStartPosition(), pos.getEndPosition(top.endPositions));
+			removeFromDeferredDiagnostics(pos.getStartPosition(), node.getEndPosition(pos));
 		}
 		try {
 			switch (kind) {
@@ -334,32 +387,8 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 	}
 
 	private void removeFromDeferredDiagnostics(int startPos, int endPos) {
-		DiagnosticListener<?> listener = getContext().get(DiagnosticListener.class);
-		if (listener instanceof CapturingDiagnosticListener) {
-			((CapturingDiagnosticListener) listener).suppress(startPos, endPos);
-		}
-		try {
-			if (JAVAC7_DEFERRED_DIAGNOSTICS != null) {
-				ListBuffer<?> deferredDiagnostics = (ListBuffer<?>) JAVAC7_DEFERRED_DIAGNOSTICS.get(log);
-				ListBuffer<Object> newDeferredDiagnostics = ListBuffer.lb();
-				for (Object diag : deferredDiagnostics) {
-					if (!(diag instanceof JCDiagnostic)) {
-						newDeferredDiagnostics.add(diag);
-						continue;
-					}
-					long here = ((JCDiagnostic) diag).getStartPosition();
-					if (here >= startPos && here < endPos) {
-						// We eliminate it
-					} else {
-						newDeferredDiagnostics.add(diag);
-					}
-				}
-				JAVAC7_DEFERRED_DIAGNOSTICS.set(log, newDeferredDiagnostics);
-			}
-		} catch (Exception e) {
-			// We do not expect failure here; if failure does occur, the best course of action is to silently continue; the result will be that the error output of
-			// javac will contain rather a lot of messages, but this is a lot better than just crashing during compilation!
-		}
+		JCCompilationUnit self = (JCCompilationUnit) top().get();
+		new CompilerMessageSuppressor(getContext()).removeAllBetween(self.sourcefile, startPos, endPos);
 	}
 	
 	/** {@inheritDoc} */

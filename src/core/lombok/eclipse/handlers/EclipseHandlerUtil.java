@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2013 The Project Lombok Authors.
+ * Copyright (C) 2009-2014 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,6 +22,7 @@
 package lombok.eclipse.handlers;
 
 import static lombok.eclipse.Eclipse.*;
+import static lombok.core.TransformationsUtil.*;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -61,6 +62,7 @@ import org.eclipse.jdt.internal.compiler.ast.Annotation;
 import org.eclipse.jdt.internal.compiler.ast.ArrayInitializer;
 import org.eclipse.jdt.internal.compiler.ast.ArrayQualifiedTypeReference;
 import org.eclipse.jdt.internal.compiler.ast.ArrayTypeReference;
+import org.eclipse.jdt.internal.compiler.ast.Block;
 import org.eclipse.jdt.internal.compiler.ast.CastExpression;
 import org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.ConstructorDeclaration;
@@ -143,7 +145,7 @@ public class EclipseHandlerUtil {
 		} catch (NoClassDefFoundError e) {  //standalone ecj does not jave Platform, ILog, IStatus, and friends.
 			new TerminalLogger().error(message, bundleName, error);
 		}
-		if (cud != null) EclipseAST.addProblemToCompilationResult(cud, false, message + " - See error log.", 0, 0);
+		if (cud != null) EclipseAST.addProblemToCompilationResult(cud.getFileName(), cud.compilationResult, false, message + " - See error log.", 0, 0);
 	}
 	
 	/**
@@ -296,6 +298,29 @@ public class EclipseHandlerUtil {
 		
 	}
 	
+	public static void sanityCheckForMethodGeneratingAnnotationsOnBuilderClass(EclipseNode typeNode, EclipseNode errorNode) {
+		List<String> disallowed = null;
+		for (EclipseNode child : typeNode.down()) {
+			for (Class<? extends java.lang.annotation.Annotation> annType : INVALID_ON_BUILDERS) {
+				if (annotationTypeMatches(annType, child)) {
+					if (disallowed == null) disallowed = new ArrayList<String>();
+					disallowed.add(annType.getSimpleName());
+				}
+			}
+		}
+		
+		int size = disallowed == null ? 0 : disallowed.size();
+		if (size == 0) return;
+		if (size == 1) {
+			errorNode.addError("@" + disallowed.get(0) + " is not allowed on builder classes.");
+			return;
+		}
+		StringBuilder out = new StringBuilder();
+		for (String a : disallowed) out.append("@").append(a).append(", ");
+		out.setLength(out.length() - 2);
+		errorNode.addError(out.append(" are not allowed on builder classes.").toString());
+	}
+	
 	public static Annotation copyAnnotation(Annotation annotation, ASTNode source) {
 		int pS = source.sourceStart, pE = source.sourceEnd;
 		
@@ -357,6 +382,20 @@ public class EclipseHandlerUtil {
 			out[idx++] = o;
 		}
 		return out;
+	}
+	
+	public static TypeReference namePlusTypeParamsToTypeReference(char[] typeName, TypeParameter[] params, long p) {
+		if (params != null && params.length > 0) {
+			TypeReference[] refs = new TypeReference[params.length];
+			int idx = 0;
+			for (TypeParameter param : params) {
+				TypeReference typeRef = new SingleTypeReference(param.name, p);
+				refs[idx++] = typeRef;
+			}
+			return new ParameterizedSingleTypeReference(typeName, refs, 0, p);
+		}
+		
+		return new SingleTypeReference(typeName, p);
 	}
 	
 	/**
@@ -831,15 +870,20 @@ public class EclipseHandlerUtil {
 	private static final Object MARKER = new Object();
 	
 	static void registerCreatedLazyGetter(FieldDeclaration field, char[] methodName, TypeReference returnType) {
-		if (!nameEquals(returnType.getTypeName(), "boolean") || returnType.dimensions() > 0) return;
-		generatedLazyGettersWithPrimitiveBoolean.put(field, MARKER);
+		if (isBoolean(returnType)) {
+			generatedLazyGettersWithPrimitiveBoolean.put(field, MARKER);
+		}
+	}
+	
+	public static boolean isBoolean(TypeReference typeReference) {
+		return nameEquals(typeReference.getTypeName(), "boolean") && typeReference.dimensions() == 0;
 	}
 	
 	private static GetterMethod findGetter(EclipseNode field) {
 		FieldDeclaration fieldDeclaration = (FieldDeclaration) field.get();
 		boolean forceBool = generatedLazyGettersWithPrimitiveBoolean.containsKey(fieldDeclaration);
 		TypeReference fieldType = fieldDeclaration.type;
-		boolean isBoolean = forceBool || (nameEquals(fieldType.getTypeName(), "boolean") && fieldType.dimensions() == 0);
+		boolean isBoolean = forceBool || isBoolean(fieldType);
 		
 		EclipseNode typeNode = field.up();
 		for (String potentialGetterName : toAllGetterNames(field, isBoolean)) {
@@ -1096,6 +1140,37 @@ public class EclipseHandlerUtil {
 		return true;
 	}
 	
+	public static char[] removePrefixFromField(EclipseNode field) {
+		String[] prefixes = null;
+		for (EclipseNode node : field.down()) {
+			if (annotationTypeMatches(Accessors.class, node)) {
+				prefixes = createAnnotation(Accessors.class, node).getInstance().prefix();
+				break;
+			}
+		}
+		
+		if (prefixes == null) {
+			EclipseNode current = field.up();
+			outer:
+			while (current != null) {
+				for (EclipseNode node : current.down()) {
+					if (annotationTypeMatches(Accessors.class, node)) {
+						prefixes = createAnnotation(Accessors.class, node).getInstance().prefix();
+						break outer;
+					}
+				}
+				current = current.up();
+			}
+		}
+		
+		if (prefixes != null && prefixes.length > 0) {
+			CharSequence newName = TransformationsUtil.removePrefix(field.getName(), prefixes);
+			if (newName != null) return newName.toString().toCharArray();
+		}
+		
+		return ((FieldDeclaration) field.get()).name;
+	}
+	
 	public static AnnotationValues<Accessors> getAccessorsForField(EclipseNode field) {
 		for (EclipseNode node : field.down()) {
 			if (annotationTypeMatches(Accessors.class, node)) {
@@ -1222,15 +1297,15 @@ public class EclipseHandlerUtil {
 	 * Inserts a field into an existing type. The type must represent a {@code TypeDeclaration}.
 	 * The field carries the &#64;{@link SuppressWarnings}("all") annotation.
 	 */
-	public static void injectFieldSuppressWarnings(EclipseNode type, FieldDeclaration field) {
+	public static EclipseNode injectFieldSuppressWarnings(EclipseNode type, FieldDeclaration field) {
 		field.annotations = createSuppressWarningsAll(field, field.annotations);
-		injectField(type, field);
+		return injectField(type, field);
 	}
 	
 	/**
 	 * Inserts a field into an existing type. The type must represent a {@code TypeDeclaration}.
 	 */
-	public static void injectField(EclipseNode type, FieldDeclaration field) {
+	public static EclipseNode injectField(EclipseNode type, FieldDeclaration field) {
 		TypeDeclaration parent = (TypeDeclaration) type.get();
 		
 		if (parent.fields == null) {
@@ -1257,17 +1332,17 @@ public class EclipseHandlerUtil {
 			}
 		}
 		
-		type.add(field, Kind.FIELD);
+		return type.add(field, Kind.FIELD);
 	}
 	
-	private static boolean isEnumConstant(final FieldDeclaration field) {
+	public static boolean isEnumConstant(final FieldDeclaration field) {
 		return ((field.initialization instanceof AllocationExpression) && (((AllocationExpression) field.initialization).enumConstant == field));
 	}
 	
 	/**
 	 * Inserts a method into an existing type. The type must represent a {@code TypeDeclaration}.
 	 */
-	public static void injectMethod(EclipseNode type, AbstractMethodDeclaration method) {
+	public static EclipseNode injectMethod(EclipseNode type, AbstractMethodDeclaration method) {
 		method.annotations = createSuppressWarningsAll(method, method.annotations);
 		TypeDeclaration parent = (TypeDeclaration) type.get();
 		
@@ -1300,7 +1375,29 @@ public class EclipseHandlerUtil {
 			parent.methods = newArray;
 		}
 		
-		type.add(method, Kind.METHOD);
+		return type.add(method, Kind.METHOD);
+	}
+	
+	/**
+	 * Adds an inner type (class, interface, enum) to the given type. Cannot inject top-level types.
+	 * 
+	 * @param typeNode parent type to inject new type into
+	 * @param type New type (class, interface, etc) to inject.
+	 */
+	public static EclipseNode injectType(final EclipseNode typeNode, final TypeDeclaration type) {
+		type.annotations = createSuppressWarningsAll(type, type.annotations);
+		TypeDeclaration parent = (TypeDeclaration) typeNode.get();
+
+		if (parent.memberTypes == null) {
+			parent.memberTypes = new TypeDeclaration[] { type };
+		} else {
+			TypeDeclaration[] newArray = new TypeDeclaration[parent.memberTypes.length + 1];
+			System.arraycopy(parent.memberTypes, 0, newArray, 0, parent.memberTypes.length);
+			newArray[parent.memberTypes.length] = type;
+			parent.memberTypes = newArray;
+		}
+		
+		return typeNode.add(type, Kind.TYPE);
 	}
 	
 	/**
@@ -1379,6 +1476,19 @@ public class EclipseHandlerUtil {
 	private static final char[] ALL = "all".toCharArray();
 	
 	public static Annotation[] createSuppressWarningsAll(ASTNode source, Annotation[] originalAnnotationArray) {
+		if (originalAnnotationArray != null) for (Annotation ann : originalAnnotationArray) {
+			char[] lastToken = null;
+			
+			if (ann.type instanceof QualifiedTypeReference) {
+				char[][] t = ((QualifiedTypeReference) ann.type).tokens;
+				lastToken = t[t.length - 1];
+			} else if (ann.type instanceof SingleTypeReference) {
+				lastToken = ((SingleTypeReference) ann.type).token;
+			}
+			
+			if (lastToken != null && new String(lastToken).equals("SuppressWarnings")) return originalAnnotationArray;
+		}
+		
 		int pS = source.sourceStart, pE = source.sourceEnd;
 		long p = (long)pS << 32 | pE;
 		long[] poss = new long[3];
@@ -1422,7 +1532,11 @@ public class EclipseHandlerUtil {
 		EqualExpression equalExpression = new EqualExpression(varName, nullLiteral, OperatorIds.EQUAL_EQUAL);
 		equalExpression.sourceStart = pS; equalExpression.statementEnd = equalExpression.sourceEnd = pE;
 		setGeneratedBy(equalExpression, source);
-		IfStatement ifStatement = new IfStatement(equalExpression, throwStatement, 0, 0);
+		Block throwBlock = new Block(0);
+		throwBlock.statements = new Statement[] {throwStatement};
+		throwBlock.sourceStart = pS; throwBlock.sourceEnd = pE;
+		setGeneratedBy(throwBlock, source);
+		IfStatement ifStatement = new IfStatement(equalExpression, throwBlock, 0, 0);
 		setGeneratedBy(ifStatement, source);
 		return ifStatement;
 	}
@@ -1580,13 +1694,13 @@ public class EclipseHandlerUtil {
 		intLiteralFactoryMethod = intLiteralFactoryMethod_;
 	}
 	
-	private static boolean isAllUnderscores(char[] in) {
+	private static boolean isAllValidOnXCharacters(char[] in) {
 		if (in == null || in.length == 0) return false;
-		for (char c : in) if (c != '_') return false;
+		for (char c : in) if (c != '_' && c != 'X' && c != 'x' && c != '$') return false;
 		return true;
 	}
 	
-	static List<Annotation> unboxAndRemoveAnnotationParameter(Annotation annotation, String annotationName, String errorName, EclipseNode errorNode) {
+	public static List<Annotation> unboxAndRemoveAnnotationParameter(Annotation annotation, String annotationName, String errorName, EclipseNode errorNode) {
 		if ("value".equals(annotationName)) {
 			// We can't unbox this, because SingleMemberAnnotation REQUIRES a value, and this method
 			// is supposed to remove the value. That means we need to replace the SMA with either
@@ -1615,31 +1729,31 @@ public class EclipseHandlerUtil {
 			if (i > 0) System.arraycopy(pairs, 0, newPairs, 0, i);
 			if (i < pairs.length - 1) System.arraycopy(pairs, i + 1, newPairs, i, pairs.length - i - 1);
 			normalAnnotation.memberValuePairs = newPairs;
-			// We have now removed the annotation parameter and stored '@_({... annotations ...})',
+			// We have now removed the annotation parameter and stored '@__({... annotations ...})',
 			// which we must now unbox.
 			if (!(value instanceof Annotation)) {
-				errorNode.addError("The correct format is " + errorName + "@_({@SomeAnnotation, @SomeOtherAnnotation}))");
+				errorNode.addError("The correct format is " + errorName + "@__({@SomeAnnotation, @SomeOtherAnnotation}))");
 				return Collections.emptyList();
 			}
 			
-			Annotation atUnderscore = (Annotation) value;
-			if (!(atUnderscore.type instanceof SingleTypeReference) ||
-					!isAllUnderscores(((SingleTypeReference) atUnderscore.type).token)) {
-				errorNode.addError("The correct format is " + errorName + "@_({@SomeAnnotation, @SomeOtherAnnotation}))");
+			Annotation atDummyIdentifier = (Annotation) value;
+			if (!(atDummyIdentifier.type instanceof SingleTypeReference) ||
+					!isAllValidOnXCharacters(((SingleTypeReference) atDummyIdentifier.type).token)) {
+				errorNode.addError("The correct format is " + errorName + "@__({@SomeAnnotation, @SomeOtherAnnotation}))");
 				return Collections.emptyList();
 			}
 			
-			if (atUnderscore instanceof MarkerAnnotation) {
-				// It's @getter(onMethod=@_). This is weird, but fine.
+			if (atDummyIdentifier instanceof MarkerAnnotation) {
+				// It's @Getter(onMethod=@__). This is weird, but fine.
 				return Collections.emptyList();
 			}
 			
 			Expression content = null;
 			
-			if (atUnderscore instanceof NormalAnnotation) {
-				MemberValuePair[] mvps = ((NormalAnnotation) atUnderscore).memberValuePairs;
+			if (atDummyIdentifier instanceof NormalAnnotation) {
+				MemberValuePair[] mvps = ((NormalAnnotation) atDummyIdentifier).memberValuePairs;
 				if (mvps == null || mvps.length == 0) {
-					// It's @getter(onMethod=@_()). This is weird, but fine.
+					// It's @Getter(onMethod=@__()). This is weird, but fine.
 					return Collections.emptyList();
 				}
 				if (mvps.length == 1 && Arrays.equals("value".toCharArray(), mvps[0].name)) {
@@ -1647,12 +1761,12 @@ public class EclipseHandlerUtil {
 				}
 			}
 			
-			if (atUnderscore instanceof SingleMemberAnnotation) {
-				content = ((SingleMemberAnnotation) atUnderscore).memberValue;
+			if (atDummyIdentifier instanceof SingleMemberAnnotation) {
+				content = ((SingleMemberAnnotation) atDummyIdentifier).memberValue;
 			}
 			
 			if (content == null) {
-				errorNode.addError("The correct format is " + errorName + "@_({@SomeAnnotation, @SomeOtherAnnotation}))");
+				errorNode.addError("The correct format is " + errorName + "@__({@SomeAnnotation, @SomeOtherAnnotation}))");
 				return Collections.emptyList();
 			}
 			
@@ -1664,13 +1778,13 @@ public class EclipseHandlerUtil {
 				if (expressions != null) for (Expression ex : expressions) {
 					if (ex instanceof Annotation) result.add((Annotation) ex);
 					else {
-						errorNode.addError("The correct format is " + errorName + "@_({@SomeAnnotation, @SomeOtherAnnotation}))");
+						errorNode.addError("The correct format is " + errorName + "@__({@SomeAnnotation, @SomeOtherAnnotation}))");
 						return Collections.emptyList();
 					}
 				}
 				return result;
 			} else {
-				errorNode.addError("The correct format is " + errorName + "@_({@SomeAnnotation, @SomeOtherAnnotation}))");
+				errorNode.addError("The correct format is " + errorName + "@__({@SomeAnnotation, @SomeOtherAnnotation}))");
 				return Collections.emptyList();
 			}
 		}
@@ -1678,7 +1792,7 @@ public class EclipseHandlerUtil {
 		return Collections.emptyList();
 	}
 	
-	static NameReference createNameReference(String name, Annotation source) {
+	public static NameReference createNameReference(String name, Annotation source) {
 		int pS = source.sourceStart, pE = source.sourceEnd;
 		long p = (long)pS << 32 | pE;
 		

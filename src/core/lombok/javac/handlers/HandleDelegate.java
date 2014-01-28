@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2012 The Project Lombok Authors.
+ * Copyright (C) 2010-2014 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -48,6 +48,7 @@ import lombok.javac.FindTypeVarScanner;
 import lombok.javac.JavacAnnotationHandler;
 import lombok.javac.JavacNode;
 import lombok.javac.JavacResolution;
+import lombok.javac.JavacTreeMaker;
 import lombok.javac.ResolutionResetNeeded;
 import lombok.javac.JavacResolution.TypeNotConvertibleException;
 
@@ -71,7 +72,6 @@ import com.sun.tools.javac.tree.JCTree.JCModifiers;
 import com.sun.tools.javac.tree.JCTree.JCStatement;
 import com.sun.tools.javac.tree.JCTree.JCTypeParameter;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
-import com.sun.tools.javac.tree.TreeMaker;
 import com.sun.tools.javac.util.ListBuffer;
 import com.sun.tools.javac.util.Name;
 
@@ -190,7 +190,7 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		for (MethodSig sig : signaturesToDelegate) generateAndAdd(sig, annotationNode, delegateName, delegateReceiver);
 	}
 	
-	private void generateAndAdd(MethodSig sig, JavacNode annotation, Name delegateName, DelegateReceiver delegateReceiver) {
+	public void generateAndAdd(MethodSig sig, JavacNode annotation, Name delegateName, DelegateReceiver delegateReceiver) {
 		List<JCMethodDecl> toAdd = new ArrayList<JCMethodDecl>();
 		try {
 			toAdd.add(createDelegateMethod(sig, annotation, delegateName, delegateReceiver));
@@ -207,7 +207,7 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		}
 	}
 	
-	private static class CantMakeDelegates extends Exception {
+	public static class CantMakeDelegates extends Exception {
 		Set<String> conflicted;
 	}
 	
@@ -218,7 +218,7 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 	 * 
 	 * @throws CantMakeDelegates If there's a conflict. Conflict list is in ex.conflicted.
 	 */
-	private void checkConflictOfTypeVarNames(MethodSig sig, JavacNode annotation) throws CantMakeDelegates {
+	public void checkConflictOfTypeVarNames(MethodSig sig, JavacNode annotation) throws CantMakeDelegates {
 		// As first step, we check if there's a conflict between the delegate method's type vars and our own class.
 		
 		if (sig.elem.getTypeParameters().isEmpty()) return;
@@ -258,7 +258,7 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		}
 	}
 	
-	private JCMethodDecl createDelegateMethod(MethodSig sig, JavacNode annotation, Name delegateName, DelegateReceiver delegateReceiver) throws TypeNotConvertibleException, CantMakeDelegates {
+	public JCMethodDecl createDelegateMethod(MethodSig sig, JavacNode annotation, Name delegateName, DelegateReceiver delegateReceiver) throws TypeNotConvertibleException, CantMakeDelegates {
 		/* public <T, U, ...> ReturnType methodName(ParamType1 name1, ParamType2 name2, ...) throws T1, T2, ... {
 		 *      (return) delegate.<T, U>methodName(name1, name2);
 		 *  }
@@ -266,12 +266,12 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		
 		checkConflictOfTypeVarNames(sig, annotation);
 		
-		TreeMaker maker = annotation.getTreeMaker();
+		JavacTreeMaker maker = annotation.getTreeMaker();
 		
 		com.sun.tools.javac.util.List<JCAnnotation> annotations;
 		if (sig.isDeprecated) {
 			annotations = com.sun.tools.javac.util.List.of(maker.Annotation(
-					chainDots(annotation, "java", "lang", "Deprecated"),
+					genJavaLangTypeRef(annotation, "Deprecated"),
 					com.sun.tools.javac.util.List.<JCExpression>nil()));
 		} else {
 			annotations = com.sun.tools.javac.util.List.nil();
@@ -305,7 +305,8 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		
 		int idx = 0;
 		for (TypeMirror param : sig.type.getParameterTypes()) {
-			JCModifiers paramMods = maker.Modifiers(Flags.FINAL);
+			long flags = JavacHandlerUtil.addFinalIfNeeded(Flags.PARAMETER, annotation.getContext());
+			JCModifiers paramMods = maker.Modifiers(flags);
 			String[] paramNames = sig.getParameterNames();
 			Name name = annotation.toName(paramNames[idx++]);
 			params.append(maker.VarDef(paramMods, name, JavacResolution.typeToJCTree((Type) param, annotation.getAst(), true), null));
@@ -316,14 +317,14 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		JCStatement body = useReturn ? maker.Return(delegateCall) : maker.Exec(delegateCall);
 		JCBlock bodyBlock = maker.Block(0, com.sun.tools.javac.util.List.of(body));
 		
-		return recursiveSetGeneratedBy(maker.MethodDef(mods, sig.name, returnType, toList(typeParams), toList(params), toList(thrown), bodyBlock, null), annotation.get());
+		return recursiveSetGeneratedBy(maker.MethodDef(mods, sig.name, returnType, toList(typeParams), toList(params), toList(thrown), bodyBlock, null), annotation.get(), annotation.getContext());
 	}
 	
-	private static <T> com.sun.tools.javac.util.List<T> toList(ListBuffer<T> collection) {
+	public static <T> com.sun.tools.javac.util.List<T> toList(ListBuffer<T> collection) {
 		return collection == null ? com.sun.tools.javac.util.List.<T>nil() : collection.toList();
 	}
 	
-	private void addMethodBindings(List<MethodSig> signatures, ClassType ct, JavacTypes types, Set<String> banList) {
+	public void addMethodBindings(List<MethodSig> signatures, ClassType ct, JavacTypes types, Set<String> banList) {
 		TypeSymbol tsym = ct.asElement();
 		if (tsym == null) return;
 		
@@ -346,7 +347,7 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		}
 	}
 	
-	private static class MethodSig {
+	public static class MethodSig {
 		final Name name;
 		final ExecutableType type;
 		final boolean isDeprecated;
@@ -373,7 +374,7 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		}
 	}
 	
-	private static String printSig(ExecutableType method, Name name, JavacTypes types) {
+	public static String printSig(ExecutableType method, Name name, JavacTypes types) {
 		StringBuilder sb = new StringBuilder();
 		sb.append(name.toString()).append("(");
 		boolean first = true;
@@ -385,22 +386,22 @@ public class HandleDelegate extends JavacAnnotationHandler<Delegate> {
 		return sb.append(")").toString();
 	}
 	
-	private static String typeBindingToSignature(TypeMirror binding, JavacTypes types) {
+	public static String typeBindingToSignature(TypeMirror binding, JavacTypes types) {
 		binding = types.erasure(binding);
 		return binding.toString();
 	}
 	
-	private enum DelegateReceiver {
+	public enum DelegateReceiver {
 		METHOD {
 			public JCExpression get(final JavacNode node, final Name name) {
 				com.sun.tools.javac.util.List<JCExpression> nilExprs = com.sun.tools.javac.util.List.nil();
-				final TreeMaker maker = node.getTreeMaker();
+				final JavacTreeMaker maker = node.getTreeMaker();
 				return maker.Apply(nilExprs, maker.Select(maker.Ident(node.toName("this")), name), nilExprs);
 			}
 		},
 		FIELD {
 			public JCExpression get(final JavacNode node, final Name name) {
-				final TreeMaker maker = node.getTreeMaker();
+				final JavacTreeMaker maker = node.getTreeMaker();
 				return maker.Select(maker.Ident(node.toName("this")), name);
 			}
 		};

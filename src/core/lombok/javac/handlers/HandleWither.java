@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2013 The Project Lombok Authors.
+ * Copyright (C) 2012-2014 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,6 +33,8 @@ import lombok.core.TransformationsUtil;
 import lombok.experimental.Wither;
 import lombok.javac.JavacAnnotationHandler;
 import lombok.javac.JavacNode;
+import lombok.javac.JavacTreeMaker;
+import lombok.javac.handlers.JavacHandlerUtil.CopyJavadoc;
 import lombok.javac.handlers.JavacHandlerUtil.FieldAccess;
 
 import org.mangosdk.spi.ProviderFor;
@@ -50,7 +52,6 @@ import com.sun.tools.javac.tree.JCTree.JCReturn;
 import com.sun.tools.javac.tree.JCTree.JCStatement;
 import com.sun.tools.javac.tree.JCTree.JCTypeParameter;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
-import com.sun.tools.javac.tree.TreeMaker;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.List;
 import com.sun.tools.javac.util.ListBuffer;
@@ -141,13 +142,13 @@ public class HandleWither extends JavacAnnotationHandler<Wither> {
 		}
 	}
 	
-	private void createWitherForFields(AccessLevel level, Collection<JavacNode> fieldNodes, JavacNode errorNode, boolean whineIfExists, List<JCAnnotation> onMethod, List<JCAnnotation> onParam) {
+	public void createWitherForFields(AccessLevel level, Collection<JavacNode> fieldNodes, JavacNode errorNode, boolean whineIfExists, List<JCAnnotation> onMethod, List<JCAnnotation> onParam) {
 		for (JavacNode fieldNode : fieldNodes) {
 			createWitherForField(level, fieldNode, errorNode, whineIfExists, onMethod, onParam);
 		}
 	}
 	
-	private void createWitherForField(AccessLevel level, JavacNode fieldNode, JavacNode source, boolean whineIfExists, List<JCAnnotation> onMethod, List<JCAnnotation> onParam) {
+	public void createWitherForField(AccessLevel level, JavacNode fieldNode, JavacNode source, boolean whineIfExists, List<JCAnnotation> onMethod, List<JCAnnotation> onParam) {
 		if (fieldNode.getKind() != Kind.FIELD) {
 			fieldNode.addError("@Wither is only supported on a class or a field.");
 			return;
@@ -200,27 +201,26 @@ public class HandleWither extends JavacAnnotationHandler<Wither> {
 		injectMethod(fieldNode.up(), createdWither);
 	}
 	
-	private JCMethodDecl createWither(long access, JavacNode field, TreeMaker treeMaker, JCTree source, List<JCAnnotation> onMethod, List<JCAnnotation> onParam) {
+	public JCMethodDecl createWither(long access, JavacNode field, JavacTreeMaker maker, JCTree source, List<JCAnnotation> onMethod, List<JCAnnotation> onParam) {
 		String witherName = toWitherName(field);
 		if (witherName == null) return null;
 		
 		JCVariableDecl fieldDecl = (JCVariableDecl) field.get();
 		
-		ListBuffer<JCStatement> statements = ListBuffer.lb();
+		ListBuffer<JCStatement> statements = new ListBuffer<JCStatement>();
 		List<JCAnnotation> nonNulls = findAnnotations(field, TransformationsUtil.NON_NULL_PATTERN);
 		List<JCAnnotation> nullables = findAnnotations(field, TransformationsUtil.NULLABLE_PATTERN);
 		
 		Name methodName = field.toName(witherName);
 		List<JCAnnotation> annsOnParam = copyAnnotations(onParam).appendList(nonNulls).appendList(nullables);
 		
-		JCVariableDecl param = treeMaker.VarDef(treeMaker.Modifiers(Flags.FINAL, annsOnParam), fieldDecl.name, fieldDecl.vartype, null);
+		long flags = JavacHandlerUtil.addFinalIfNeeded(Flags.PARAMETER, field.getContext());
+		JCVariableDecl param = maker.VarDef(maker.Modifiers(flags, annsOnParam), fieldDecl.name, fieldDecl.vartype, null);
 		
 		JCExpression selfType = cloneSelfType(field);
 		if (selfType == null) return null;
 		
-		TreeMaker maker = field.getTreeMaker();
-		
-		ListBuffer<JCExpression> args = ListBuffer.lb();
+		ListBuffer<JCExpression> args = new ListBuffer<JCExpression>();
 		for (JavacNode child : field.up().down()) {
 			if (child.getKind() != Kind.FIELD) continue;
 			JCVariableDecl childDecl = (JCVariableDecl) child.get();
@@ -246,14 +246,14 @@ public class HandleWither extends JavacAnnotationHandler<Wither> {
 		if (nonNulls.isEmpty()) {
 			statements.append(returnStatement);
 		} else {
-			JCStatement nullCheck = generateNullCheck(treeMaker, field);
+			JCStatement nullCheck = generateNullCheck(maker, field);
 			if (nullCheck != null) statements.append(nullCheck);
 			statements.append(returnStatement);
 		}
 		
 		JCExpression returnType = cloneSelfType(field);
 		
-		JCBlock methodBody = treeMaker.Block(0, statements.toList());
+		JCBlock methodBody = maker.Block(0, statements.toList());
 		List<JCTypeParameter> methodGenericParams = List.nil();
 		List<JCVariableDecl> parameters = List.of(param);
 		List<JCExpression> throwsClauses = List.nil();
@@ -262,9 +262,11 @@ public class HandleWither extends JavacAnnotationHandler<Wither> {
 		List<JCAnnotation> annsOnMethod = copyAnnotations(onMethod);
 		
 		if (isFieldDeprecated(field)) {
-			annsOnMethod = annsOnMethod.prepend(treeMaker.Annotation(chainDots(field, "java", "lang", "Deprecated"), List.<JCExpression>nil()));
+			annsOnMethod = annsOnMethod.prepend(maker.Annotation(genJavaLangTypeRef(field, "Deprecated"), List.<JCExpression>nil()));
 		}
-		return recursiveSetGeneratedBy(treeMaker.MethodDef(treeMaker.Modifiers(access, annsOnMethod), methodName, returnType,
-				methodGenericParams, parameters, throwsClauses, methodBody, annotationMethodDefaultValue), source);
+		JCMethodDecl decl = recursiveSetGeneratedBy(maker.MethodDef(maker.Modifiers(access, annsOnMethod), methodName, returnType,
+				methodGenericParams, parameters, throwsClauses, methodBody, annotationMethodDefaultValue), source, field.getContext());
+		copyJavadoc(field, decl, CopyJavadoc.WITHER);
+		return decl;
 	}
 }

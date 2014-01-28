@@ -32,25 +32,19 @@ import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import lombok.eclipse.Eclipse;
+import lombok.javac.Javac;
+
 import org.junit.runner.Description;
 import org.junit.runner.Runner;
 import org.junit.runner.notification.Failure;
 import org.junit.runner.notification.RunNotifier;
 
-import com.sun.tools.javac.main.JavaCompiler;
-
 public class DirectoryRunner extends Runner {
 	public enum Compiler {
 		DELOMBOK {
 			@Override public int getVersion() {
-				Matcher m = VERSION_PARSER.matcher(JavaCompiler.version());
-				if (m.matches()) {
-					int major = Integer.parseInt(m.group(1));
-					int minor = Integer.parseInt(m.group(2));
-					if (major == 1) return minor;
-				}
-				
-				return 6;
+				return Javac.getJavaCompilerVersion();
 			}
 		}, 
 		JAVAC {
@@ -60,11 +54,10 @@ public class DirectoryRunner extends Runner {
 		},
 		ECJ {
 			@Override public int getVersion() {
-				return 6;
+				return Eclipse.getEcjCompilerVersion();
 			}
 		};
 		
-		private static final Pattern VERSION_PARSER = Pattern.compile("^(\\d+)\\.(\\d+).*$");
 		public abstract int getVersion();
 	}
 	

@@ -21,8 +21,9 @@
  */
 package lombok.javac.handlers;
 
-import static lombok.javac.Javac.getCtcInt;
+import static lombok.javac.Javac.*;
 import static lombok.javac.handlers.JavacHandlerUtil.*;
+import static com.sun.tools.javac.code.TypeTags.*;
 
 import javax.lang.model.type.NoType;
 import javax.lang.model.type.TypeKind;
@@ -36,6 +37,7 @@ import lombok.core.data.OneToManyRelation;
 import lombok.core.data.OneToOneRelation;
 import lombok.javac.JavacAnnotationHandler;
 import lombok.javac.JavacNode;
+import lombok.javac.JavacTreeMaker;
 import lombok.javac.handlers.JavacHandlerUtil.FieldAccess;
 import lombok.javac.handlers.JavacHandlerUtil.MemberExistsResult;
 
@@ -104,7 +106,7 @@ public class HandleRelations {
 	}
 	
 	private static JCVariableDecl createField(Object anno, JavacNode fieldNode) {
-		TreeMaker maker = fieldNode.getTreeMaker();
+		JavacTreeMaker maker = fieldNode.getTreeMaker();
 		JCVariableDecl field = (JCVariableDecl) fieldNode.get();
 		
 		String relatedFieldName = null;
@@ -158,11 +160,11 @@ public class HandleRelations {
 		return var;
 	}
 
-	private static JCMethodDecl createSetRelatedIdMethod(JavacNode fieldNode, TreeMaker maker, String relatedFieldName, boolean isOneToOne, JCIdent baseType, JCExpression referenceType) {
+	private static JCMethodDecl createSetRelatedIdMethod(JavacNode fieldNode, JavacTreeMaker maker, String relatedFieldName, boolean isOneToOne, JCIdent baseType, JCExpression referenceType) {
 		return maker.MethodDef(
 				maker.Modifiers(Flags.PUBLIC, List.of(maker.Annotation(chainDots(fieldNode, Override.class), List.<JCExpression>nil()))),
 				fieldNode.toName("setRelatedId"),
-				maker.Type(new JCNoType(getCtcInt(TypeTags.class, "VOID"))),
+				maker.Type(new JCNoType(VOID)),
 				List.<JCTypeParameter>nil(),
 				List.<JCVariableDecl>of(
 						maker.VarDef(
@@ -200,7 +202,7 @@ public class HandleRelations {
 		);
 	}
 
-	private static JCMethodDecl createSetReferencedObjectMethod(JavacNode fieldNode, TreeMaker maker, JCVariableDecl field, JCIdent baseType, boolean isUnique) {
+	private static JCMethodDecl createSetReferencedObjectMethod(JavacNode fieldNode, JavacTreeMaker maker, JCVariableDecl field, JCIdent baseType, boolean isUnique) {
 		JCExpression refVariableType = getFieldType(fieldNode, FieldAccess.ALWAYS_FIELD);
 		if (isUnique) {
 			refVariableType = maker.TypeApply(
@@ -243,7 +245,7 @@ public class HandleRelations {
 		return maker.MethodDef(
 				maker.Modifiers(Flags.PUBLIC, List.of(maker.Annotation(chainDots(fieldNode, Override.class), List.<JCExpression>nil()))),
 				fieldNode.toName("setReferencedObject"),
-				maker.Type(new JCNoType(getCtcInt(TypeTags.class, "VOID"))),
+				maker.Type(new JCNoType(VOID)),
 				List.<JCTypeParameter>nil(),
 				List.<JCVariableDecl>of(
 						maker.VarDef(
@@ -270,7 +272,7 @@ public class HandleRelations {
 		);
 	}
 
-	private static JCMethodDecl createGetReferencedKeyMethod(JavacNode fieldNode, TreeMaker maker, String relatedFieldName, boolean isOneToOne, JCIdent baseType, JCExpression referenceType) {
+	private static JCMethodDecl createGetReferencedKeyMethod(JavacNode fieldNode, JavacTreeMaker maker, String relatedFieldName, boolean isOneToOne, JCIdent baseType, JCExpression referenceType) {
 		return maker.MethodDef(
 				maker.Modifiers(Flags.PUBLIC, List.of(maker.Annotation(chainDots(fieldNode, Override.class), List.<JCExpression>nil()))),
 				fieldNode.toName("getReferencedKey"),
@@ -328,8 +330,8 @@ public class HandleRelations {
 		
 		@Override
 		public TypeKind getKind() {
-			if (tag == getCtcInt(TypeTags.class, "VOID")) return TypeKind.VOID;
-			if (tag == getCtcInt(TypeTags.class, "NONE")) return TypeKind.NONE;
+			if (tag == VOID) return TypeKind.VOID;
+			if (tag == NONE) return TypeKind.NONE;
 			throw new AssertionError("Unexpected tag: " + tag);
 		}
 		

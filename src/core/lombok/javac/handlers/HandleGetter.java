@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2013 The Project Lombok Authors.
+ * Copyright (C) 2009-2014 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,7 +21,9 @@
  */
 package lombok.javac.handlers;
 
+import static com.sun.tools.javac.code.TypeTags.BOT;
 import static lombok.javac.Javac.*;
+import static lombok.javac.JavacTreeMaker.TypeTag.typeTag;
 import static lombok.javac.handlers.JavacHandlerUtil.*;
 
 import java.sql.Timestamp;
@@ -38,6 +40,9 @@ import lombok.core.AnnotationValues;
 import lombok.core.TransformationsUtil;
 import lombok.javac.JavacAnnotationHandler;
 import lombok.javac.JavacNode;
+import lombok.javac.JavacTreeMaker;
+import lombok.javac.JavacTreeMaker.TypeTag;
+import lombok.javac.handlers.JavacHandlerUtil.CopyJavadoc;
 import lombok.javac.handlers.JavacHandlerUtil.FieldAccess;
 
 import org.mangosdk.spi.ProviderFor;
@@ -54,14 +59,11 @@ import com.sun.tools.javac.tree.JCTree.JCExpressionStatement;
 import com.sun.tools.javac.tree.JCTree.JCIf;
 import com.sun.tools.javac.tree.JCTree.JCMethodDecl;
 import com.sun.tools.javac.tree.JCTree.JCMethodInvocation;
-import com.sun.tools.javac.tree.JCTree.JCNewClass;
 import com.sun.tools.javac.tree.JCTree.JCPrimitiveTypeTree;
 import com.sun.tools.javac.tree.JCTree.JCStatement;
 import com.sun.tools.javac.tree.JCTree.JCSynchronized;
-import com.sun.tools.javac.tree.JCTree.JCTypeApply;
 import com.sun.tools.javac.tree.JCTree.JCTypeParameter;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
-import com.sun.tools.javac.tree.TreeMaker;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.List;
 import com.sun.tools.javac.util.ListBuffer;
@@ -161,13 +163,13 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		}
 	}
 	
-	private void createGetterForFields(AccessLevel level, Collection<JavacNode> fieldNodes, JavacNode errorNode, boolean whineIfExists, boolean lazy, List<JCAnnotation> onMethod) {
+	public void createGetterForFields(AccessLevel level, Collection<JavacNode> fieldNodes, JavacNode errorNode, boolean whineIfExists, boolean lazy, List<JCAnnotation> onMethod) {
 		for (JavacNode fieldNode : fieldNodes) {
 			createGetterForField(level, fieldNode, errorNode, whineIfExists, lazy, onMethod);
 		}
 	}
 	
-	private void createGetterForField(AccessLevel level,
+	public void createGetterForField(AccessLevel level,
 			JavacNode fieldNode, JavacNode source, boolean whineIfExists, boolean lazy, List<JCAnnotation> onMethod) {
 		if (fieldNode.getKind() != Kind.FIELD) {
 			source.addError("@Getter is only supported on a class or a field.");
@@ -217,7 +219,7 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		injectMethod(fieldNode.up(), createGetter(access, fieldNode, fieldNode.getTreeMaker(), source.get(), lazy, onMethod));
 	}
 	
-	private JCMethodDecl createGetter(long access, JavacNode field, TreeMaker treeMaker, JCTree source, boolean lazy, List<JCAnnotation> onMethod) {
+	public JCMethodDecl createGetter(long access, JavacNode field, JavacTreeMaker treeMaker, JCTree source, boolean lazy, List<JCAnnotation> onMethod) {
 		JCVariableDecl fieldNode = (JCVariableDecl) field.get();
 		
 		// Remember the type; lazy will change it
@@ -227,7 +229,7 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		
 		List<JCStatement> statements;
 		JCTree toClearOfMarkers = null;
-		if (lazy) {
+		if (lazy && !inNetbeansEditor(field)) {
 			toClearOfMarkers = fieldNode.init;
 			statements = createLazyGetterBody(treeMaker, field, source);
 		} else {
@@ -248,19 +250,20 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		
 		List<JCAnnotation> annsOnMethod = copyAnnotations(onMethod).appendList(nonNulls).appendList(nullables);
 		if (isFieldDeprecated(field)) {
-			annsOnMethod = annsOnMethod.prepend(treeMaker.Annotation(chainDots(field, "java", "lang", "Deprecated"), List.<JCExpression>nil()));
+			annsOnMethod = annsOnMethod.prepend(treeMaker.Annotation(genJavaLangTypeRef(field, "Deprecated"), List.<JCExpression>nil()));
 		}
 		
 		JCMethodDecl decl = recursiveSetGeneratedBy(treeMaker.MethodDef(treeMaker.Modifiers(access, annsOnMethod), methodName, methodType,
-				methodGenericParams, parameters, throwsClauses, methodBody, annotationMethodDefaultValue), source);
+				methodGenericParams, parameters, throwsClauses, methodBody, annotationMethodDefaultValue), source, field.getContext());
 		
-		if (toClearOfMarkers != null) recursiveSetGeneratedBy(toClearOfMarkers, null);
+		if (toClearOfMarkers != null) recursiveSetGeneratedBy(toClearOfMarkers, null, null);
 		decl.mods.annotations = decl.mods.annotations.appendList(delegates);
 		
+		copyJavadoc(field, decl, CopyJavadoc.GETTER);
 		return decl;
 	}
 	
-	private static List<JCAnnotation> findDelegatesAndRemoveFromField(JavacNode field) {
+	public static List<JCAnnotation> findDelegatesAndRemoveFromField(JavacNode field) {
 		JCVariableDecl fieldNode = (JCVariableDecl) field.get();
 		
 		List<JCAnnotation> delegates = List.nil();
@@ -271,7 +274,7 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		}
 		
 		if (!delegates.isEmpty()) {
-			ListBuffer<JCAnnotation> withoutDelegates = ListBuffer.lb();
+			ListBuffer<JCAnnotation> withoutDelegates = new ListBuffer<JCAnnotation>();
 			for (JCAnnotation annotation : fieldNode.mods.annotations) {
 				if (!delegates.contains(annotation)) {
 					withoutDelegates.append(annotation);
@@ -283,7 +286,7 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		return delegates;
 	}
 	
-	private List<JCStatement> createSimpleGetterBody(TreeMaker treeMaker, JavacNode field) {
+	private List<JCStatement> createSimpleGetterBody(JavacTreeMaker treeMaker, JavacNode field) {
 		JCVariableDecl fieldDecl = (JCVariableDecl) field.get();
 		JCExpression fieldRef = createFieldAccessor(treeMaker, field, FieldAccess.ALWAYS_FIELD);
 	
@@ -326,61 +329,97 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 	private static final String AR = "java.util.concurrent.atomic.AtomicReference";
 	private static final List<JCExpression> NIL_EXPRESSION = List.nil();
 	
-	private static final java.util.Map<Integer, String> TYPE_MAP;
+	public static final java.util.Map<TypeTag, String> TYPE_MAP;
 	static {
-		Map<Integer, String> m = new HashMap<Integer, String>();
-		m.put(CTC_INT, "java.lang.Integer");
-		m.put(CTC_DOUBLE, "java.lang.Double");
-		m.put(CTC_FLOAT, "java.lang.Float");
-		m.put(CTC_SHORT, "java.lang.Short");
-		m.put(CTC_BYTE, "java.lang.Byte");
-		m.put(CTC_LONG, "java.lang.Long");
-		m.put(CTC_BOOLEAN, "java.lang.Boolean");
-		m.put(CTC_CHAR, "java.lang.Character");
+		Map<TypeTag, String> m = new HashMap<TypeTag, String>();
+		m.put(CTC_INT, "Integer");
+		m.put(CTC_DOUBLE, "Double");
+		m.put(CTC_FLOAT, "Float");
+		m.put(CTC_SHORT, "Short");
+		m.put(CTC_BYTE, "Byte");
+		m.put(CTC_LONG, "Long");
+		m.put(CTC_BOOLEAN, "Boolean");
+		m.put(CTC_CHAR, "Character");
 		TYPE_MAP = Collections.unmodifiableMap(m);
 	}
 	
-	private List<JCStatement> createLazyGetterBody(TreeMaker maker, JavacNode fieldNode, JCTree source) {	
-		ListBuffer<JCStatement> statements = ListBuffer.lb();
+	public List<JCStatement> createLazyGetterBody(JavacTreeMaker maker, JavacNode fieldNode, JCTree source) {
+		/*
+		java.lang.Object value = this.fieldName.get();
+		if (value == null) {
+			synchronized (this.fieldName) {
+				value = this.fieldName.get();
+				if (value == null) {
+					final RawValueType actualValue = INITIALIZER_EXPRESSION;
+					[IF PRIMITIVE]
+					value = actualValue;
+					[ELSE]
+					value = actualValue == null ? this.fieldName : actualValue;
+					[END IF]
+					this.fieldName.set(value);
+				}
+			}
+		}
+		[IF PRIMITIVE]
+		return (BoxedValueType) value;
+		[ELSE]
+		return (BoxedValueType) (value == this.fieldName ? null : value);
+		[END IF]
+		*/
+		
+		ListBuffer<JCStatement> statements = new ListBuffer<JCStatement>();
 		
 		JCVariableDecl field = (JCVariableDecl) fieldNode.get();
 		JCExpression copyOfRawFieldType = copyType(maker, field);
+		JCExpression copyOfBoxedFieldType = null;
 		field.type = null;
+		boolean isPrimitive = false;
 		if (field.vartype instanceof JCPrimitiveTypeTree) {
-			String boxed = TYPE_MAP.get(((JCPrimitiveTypeTree)field.vartype).typetag);
+			String boxed = TYPE_MAP.get(typeTag(field.vartype));
 			if (boxed != null) {
-				field.vartype = chainDotsString(fieldNode, boxed);
+				isPrimitive = true;
+				field.vartype = genJavaLangTypeRef(fieldNode, boxed);
+				copyOfBoxedFieldType = genJavaLangTypeRef(fieldNode, boxed);
 			}
 		}
+		if (copyOfBoxedFieldType == null) copyOfBoxedFieldType = copyType(maker, field);
 		
 		Name valueName = fieldNode.toName("value");
 		Name actualValueName = fieldNode.toName("actualValue");
 		
-		/* java.util.concurrent.atomic.AtomicReference<ValueType> value = this.fieldName.get();*/ {
-			JCTypeApply valueVarType = maker.TypeApply(chainDotsString(fieldNode, AR), List.of(copyType(maker, field)));
+		/* java.lang.Object value = this.fieldName.get();*/ {
+			JCExpression valueVarType = genJavaLangTypeRef(fieldNode, "Object");
 			statements.append(maker.VarDef(maker.Modifiers(0), valueName, valueVarType, callGet(fieldNode, createFieldAccessor(maker, fieldNode, FieldAccess.ALWAYS_FIELD))));
 		}
 		
 		/* if (value == null) { */ {
 			JCSynchronized synchronizedStatement;
 			/* synchronized (this.fieldName) { */ {
-				ListBuffer<JCStatement> synchronizedStatements = ListBuffer.lb();
+				ListBuffer<JCStatement> synchronizedStatements = new ListBuffer<JCStatement>();
 				/* value = this.fieldName.get(); */ {
 					JCExpressionStatement newAssign = maker.Exec(maker.Assign(maker.Ident(valueName), callGet(fieldNode, createFieldAccessor(maker, fieldNode, FieldAccess.ALWAYS_FIELD))));
 					synchronizedStatements.append(newAssign);
 				}
 				
 				/* if (value == null) { */ {
-					ListBuffer<JCStatement> innerIfStatements = ListBuffer.lb();
-					/* ValueType actualValue = new ValueType(); */ {
+					ListBuffer<JCStatement> innerIfStatements = new ListBuffer<JCStatement>();
+					/* final RawValueType actualValue = INITIALIZER_EXPRESSION; */ {
 						innerIfStatements.append(maker.VarDef(maker.Modifiers(Flags.FINAL), actualValueName, copyOfRawFieldType, field.init));
 					}
-					/* value = new java.util.concurrent.atomic.AtomicReference<ValueType>(actualValue);*/ {
-						JCTypeApply valueVarType = maker.TypeApply(chainDotsString(fieldNode, AR), List.of(copyType(maker, field)));
-						JCNewClass newInstance = maker.NewClass(null, NIL_EXPRESSION, valueVarType, List.<JCExpression>of(maker.Ident(actualValueName)), null);
-						
-						JCStatement statement = maker.Exec(maker.Assign(maker.Ident(valueName), newInstance));
-						innerIfStatements.append(statement);
+					/* [IF primitive] value = actualValue; */ {
+						if (isPrimitive) {
+							JCStatement statement = maker.Exec(maker.Assign(maker.Ident(valueName), maker.Ident(actualValueName)));
+							innerIfStatements.append(statement);
+						}
+					}
+					/* [ELSE] value = actualValue == null ? this.fieldName : actualValue; */ {
+						if (!isPrimitive) {
+							JCExpression actualValueIsNull = maker.Binary(CTC_EQUAL, maker.Ident(actualValueName), maker.Literal(CTC_BOT, null));
+							JCExpression thisDotFieldName = createFieldAccessor(maker, fieldNode, FieldAccess.ALWAYS_FIELD);
+							JCExpression ternary = maker.Conditional(actualValueIsNull, thisDotFieldName, maker.Ident(actualValueName));
+							JCStatement statement = maker.Exec(maker.Assign(maker.Ident(valueName), ternary));
+							innerIfStatements.append(statement);
+						}
 					}
 					/* this.fieldName.set(value); */ {
 						JCStatement statement = callSet(fieldNode, createFieldAccessor(maker, fieldNode, FieldAccess.ALWAYS_FIELD), maker.Ident(valueName));
@@ -399,32 +438,42 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 			JCIf ifStatement = maker.If(isNull, maker.Block(0, List.<JCStatement>of(synchronizedStatement)), null);
 			statements.append(ifStatement);
 		}
-		/* return value.get(); */
-		statements.append(maker.Return(callGet(fieldNode, maker.Ident(valueName))));
+		/* [IF PRIMITIVE] return (BoxedValueType) value; */ {
+			if (isPrimitive) {
+				statements.append(maker.Return(maker.TypeCast(copyOfBoxedFieldType, maker.Ident(valueName))));
+			}
+		}
+		/* [ELSE] return (BoxedValueType) (value == this.fieldName ? null : value); */ {
+			if (!isPrimitive) {
+				JCExpression valueEqualsSelf = maker.Binary(CTC_EQUAL, maker.Ident(valueName), createFieldAccessor(maker, fieldNode, FieldAccess.ALWAYS_FIELD));
+				JCExpression ternary = maker.Conditional(valueEqualsSelf, maker.Literal(CTC_BOT,  null), maker.Ident(valueName));
+				JCExpression typeCast = maker.TypeCast(copyOfBoxedFieldType, maker.Parens(ternary));
+				statements.append(maker.Return(typeCast));
+			}
+		}
 		
 		// update the field type and init last
 		
-		/* 	private final java.util.concurrent.atomic.AtomicReference<java.util.concurrent.atomic.AtomicReference<ValueType> fieldName = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.atomic.AtomicReference<ValueType>>(); */ {
+		/*	private final java.util.concurrent.atomic.AtomicReference<Object> fieldName = new java.util.concurrent.atomic.AtomicReference<Object>(); */ {
 			field.vartype = recursiveSetGeneratedBy(
-					maker.TypeApply(chainDotsString(fieldNode, AR), List.<JCExpression>of(maker.TypeApply(chainDotsString(fieldNode, AR), List.of(copyType(maker, field))))),
-					source);
-			field.init = recursiveSetGeneratedBy(maker.NewClass(null, NIL_EXPRESSION, copyType(maker, field), NIL_EXPRESSION, null), source);
+					maker.TypeApply(chainDotsString(fieldNode, AR), List.<JCExpression>of(genJavaLangTypeRef(fieldNode, "Object"))), source, fieldNode.getContext());
+			field.init = recursiveSetGeneratedBy(maker.NewClass(null, NIL_EXPRESSION, copyType(maker, field), NIL_EXPRESSION, null), source, fieldNode.getContext());
 		}
 		
 		return statements.toList();
 	}
 	
-	private JCMethodInvocation callGet(JavacNode source, JCExpression receiver) {
-		TreeMaker maker = source.getTreeMaker();
+	public JCMethodInvocation callGet(JavacNode source, JCExpression receiver) {
+		JavacTreeMaker maker = source.getTreeMaker();
 		return maker.Apply(NIL_EXPRESSION, maker.Select(receiver, source.toName("get")), NIL_EXPRESSION);
 	}
 	
-	private JCStatement callSet(JavacNode source, JCExpression receiver, JCExpression value) {
-		TreeMaker maker = source.getTreeMaker();
+	public JCStatement callSet(JavacNode source, JCExpression receiver, JCExpression value) {
+		JavacTreeMaker maker = source.getTreeMaker();
 		return maker.Exec(maker.Apply(NIL_EXPRESSION, maker.Select(receiver, source.toName("set")), List.<JCExpression>of(value)));
 	}
 	
-	private JCExpression copyType(TreeMaker treeMaker, JCVariableDecl fieldNode) {
+	public JCExpression copyType(JavacTreeMaker treeMaker, JCVariableDecl fieldNode) {
 		return fieldNode.type != null ? treeMaker.Type(fieldNode.type) : fieldNode.vartype;
 	}
 }

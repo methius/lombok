@@ -267,7 +267,7 @@ public class EclipsePatcher extends Agent {
 				.build());
 		
 	}
-
+	
 	private static void patchPostCompileHookEclipse(ScriptManager sm) {
 		sm.addScript(ScriptBuilder.wrapMethodCall()
 				.target(new MethodTarget("org.eclipse.jdt.internal.core.builder.IncrementalImageBuilder", "writeClassFileContents"))
@@ -275,7 +275,6 @@ public class EclipsePatcher extends Agent {
 				.methodToWrap(new Hook("org.eclipse.jdt.internal.compiler.ClassFile", "getBytes", "byte[]"))
 				.wrapMethod(new Hook("lombok.eclipse.agent.PatchFixes", "runPostCompiler", "byte[]", "byte[]", "java.lang.String"))
 				.requestExtra(StackRequest.PARAM3)
-				.transplant()
 				.build());
 	}
 	

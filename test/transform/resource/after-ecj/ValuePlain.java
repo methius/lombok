@@ -1,5 +1,5 @@
-import lombok.experimental.Value;
-final @lombok.experimental.Value class Value1 {
+import lombok.Value;
+final @lombok.Value class Value1 {
   private final int x;
   private final String name;
   public @java.lang.SuppressWarnings("all") int getX() {
@@ -23,7 +23,7 @@ final @lombok.experimental.Value class Value1 {
     return true;
   }
   public @java.lang.Override @java.lang.SuppressWarnings("all") int hashCode() {
-    final int PRIME = 31;
+    final int PRIME = 59;
     int result = 1;
     result = ((result * PRIME) + this.getX());
     final java.lang.Object $name = this.getName();
@@ -68,7 +68,7 @@ final @lombok.experimental.Value class Value1 {
     return (other instanceof Value2);
   }
   public @java.lang.Override @java.lang.SuppressWarnings("all") int hashCode() {
-    final int PRIME = 31;
+    final int PRIME = 59;
     int result = 1;
     result = ((result * PRIME) + this.getX());
     final java.lang.Object $name = this.getName();
@@ -106,7 +106,7 @@ final @Value class Value3 {
     return true;
   }
   public @java.lang.Override @java.lang.SuppressWarnings("all") int hashCode() {
-    final int PRIME = 31;
+    final int PRIME = 59;
     int result = 1;
     result = ((result * PRIME) + this.getX());
     result = ((result * PRIME) + this.getY());

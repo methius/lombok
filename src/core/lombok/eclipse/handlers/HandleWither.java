@@ -143,13 +143,13 @@ public class HandleWither extends EclipseAnnotationHandler<Wither> {
 		}
 	}
 	
-	private void createWitherForFields(AccessLevel level, Collection<EclipseNode> fieldNodes, EclipseNode errorNode, ASTNode source, boolean whineIfExists, List<Annotation> onMethod, List<Annotation> onParam) {
+	public void createWitherForFields(AccessLevel level, Collection<EclipseNode> fieldNodes, EclipseNode errorNode, ASTNode source, boolean whineIfExists, List<Annotation> onMethod, List<Annotation> onParam) {
 		for (EclipseNode fieldNode : fieldNodes) {
 			createWitherForField(level, fieldNode, errorNode, source, whineIfExists, onMethod, onParam);
 		}
 	}
 	
-	private void createWitherForField(
+	public void createWitherForField(
 			AccessLevel level, EclipseNode fieldNode, EclipseNode errorNode,
 			ASTNode source, boolean whineIfExists, List<Annotation> onMethod,
 			List<Annotation> onParam) {
@@ -160,7 +160,7 @@ public class HandleWither extends EclipseAnnotationHandler<Wither> {
 		
 		FieldDeclaration field = (FieldDeclaration) fieldNode.get();
 		TypeReference fieldType = copyType(field.type, source);
-		boolean isBoolean = nameEquals(fieldType.getTypeName(), "boolean") && fieldType.dimensions() == 0;
+		boolean isBoolean = isBoolean(fieldType);
 		String witherName = toWitherName(fieldNode, isBoolean);
 		
 		if (witherName == null) {
@@ -207,7 +207,7 @@ public class HandleWither extends EclipseAnnotationHandler<Wither> {
 		injectMethod(fieldNode.up(), method);
 	}
 	
-	private MethodDeclaration createWither(TypeDeclaration parent, EclipseNode fieldNode, String name, int modifier, ASTNode source, List<Annotation> onMethod, List<Annotation> onParam) {
+	public MethodDeclaration createWither(TypeDeclaration parent, EclipseNode fieldNode, String name, int modifier, ASTNode source, List<Annotation> onMethod, List<Annotation> onParam) {
 		if (name == null) return null;
 		FieldDeclaration field = (FieldDeclaration) fieldNode.get();
 		int pS = source.sourceStart, pE = source.sourceEnd;

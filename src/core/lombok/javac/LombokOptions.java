@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 The Project Lombok Authors.
+ * Copyright (C) 2010-2013 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,37 +24,47 @@ package lombok.javac;
 import java.util.HashSet;
 import java.util.Set;
 
+import lombok.delombok.FormatPreferences;
+import lombok.delombok.LombokOptionsFactory;
+
 import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
 import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.Options;
 
-public class LombokOptions extends Options {
-	private boolean deleteLombokAnnotations = true;
+public abstract class LombokOptions extends Options {
+	private boolean deleteLombokAnnotations = false;
 	private final Set<JCCompilationUnit> changed = new HashSet<JCCompilationUnit>();
-	
-	public static LombokOptions replaceWithDelombokOptions(Context context) {
-		Options options = Options.instance(context);
-		context.put(optionsKey, (Options)null);
-		LombokOptions result = new LombokOptions(context);
-		result.putAll(options);
-		return result;
-	}
+	private FormatPreferences formatPreferences = new FormatPreferences(null);
 	
 	public boolean isChanged(JCCompilationUnit ast) {
 		return changed.contains(ast);
 	}
 	
+	public void setFormatPreferences(FormatPreferences formatPreferences) {
+		this.formatPreferences = formatPreferences;
+	}
+	
+	public FormatPreferences getFormatPreferences() {
+		return this.formatPreferences;
+	}
+	
 	public static void markChanged(Context context, JCCompilationUnit ast) {
-		Options options = context.get(Options.optionsKey);
-		if (options instanceof LombokOptions) ((LombokOptions) options).changed.add(ast);
+		LombokOptions options = LombokOptionsFactory.getDelombokOptions(context);
+		options.changed.add(ast);
 	}
 	
 	public static boolean shouldDeleteLombokAnnotations(Context context) {
-		Options options = context.get(Options.optionsKey);
-		return (options instanceof LombokOptions) && ((LombokOptions) options).deleteLombokAnnotations;
+		LombokOptions options = LombokOptionsFactory.getDelombokOptions(context);
+		return options.deleteLombokAnnotations;
 	}
 	
-	private LombokOptions(Context context) {
+	protected LombokOptions(Context context) {
 		super(context);
+	}
+	
+	public abstract void putJavacOption(String optionName, String value);
+	
+	public void deleteLombokAnnotations() {
+		this.deleteLombokAnnotations = true;
 	}
 }

@@ -1,8 +1,35 @@
 Lombok Changelog
 ----------------
 
-### v0.11.9 (Edgy Guinea Pig)
+### v1.12.5 "Edgy Guinea Pig"
+* BUGFIX: Copying javadoc to getters / setters / withers would copy non-relevant sections too. [Issue #585](https://code.google.com/p/projectlombok/issues/detail?id=585).
+* DETAIL: {Delombok} Inside enum bodies the delombok formatter didn't respect the emptyLines directive [Issue #629](https://code.google.com/p/projectlombok/issues/detail?id=629).
+* DETAIL: Use smaller primes (<127) for generating hashcodes [Issue #625](https://code.google.com/p/projectlombok/issues/detail?id=625)
+
+### v1.12.4 (January 15th, 2014)
+* BUGFIX: v1.12.2's delombok turns all operator+assignments into just assignment. Fixed. [Issue #598](https://code.google.com/p/projectlombok/issues/detail?id=598)
+* BUGFIX: {Netbeans} v1.12.2 doesn't well with netbeans. [Issue #591](https://code.google.com/p/projectlombok/issues/detail?id=591)
+* ENHANCEMENT: Delombok now supports varied options for how it formats the resulting source files. This includes scanning the source for things like the preferred indent. Use option `--format-help` for more information. [Issue #608](http://code.google.com/p/projectlombok/issues/detail?id=608)
+* DETAIL: The primes lombok generates for use in generated hashCode() methods used to be direct copies from Effective Java. It turns out these particular primes are used so much, they tend to be a bit more collision-prone, so we switched them. Now, '277' is used instead of '31'. The primes for booleans have also been changed. [Issue #625](https://code.google.com/p/projectlombok/issues/detail?id=625)
+
+### v1.12.2 (October 10th, 2013)
+* PLATFORM: Initial JDK8 support, without affecting existing support for JDK6 and 7. [Issue #451](https://code.google.com/p/projectlombok/issues/detail?id=451). While lombok will now work on JDK8 / javac8, and netbeans 7.4 and up, lombok does not (yet) support new language features introduced with java8, such as lambda expressions. Support for these features will be added in a future version.
+* PLATFORM: Running javac on IBM J9 VM would cause NullPointerExceptions when compiling with lombok. These issues should be fixed. [Issue #554](https://code.google.com/p/projectlombok/issues/detail?id=554).
+* CHANGE: [JDK8-related] The canonical way to write onMethod / onParameter / onConstructor annotation now uses a double underscore instead of a single underscore, so, now, the proper way to use this feature is `@RequiredArgsConstructor(onConstructor=@__(@Inject))`. The old way (single underscore) still works, but generates warnings on javac 8.
+* BUGFIX: Using `@NonNull` on an abstract method used to cause exceptions during compilation. [Issue #559](https://code.google.com/p/projectlombok/issues/detail?id=559).
+* BUGFIX: Using `@NonNull` on methods that also have `@SneakyThrows` or `@Synchronized` caused arbitrary behaviour. [Issue #588](https://code.google.com/p/projectlombok/issues/detail?id=588).
+* GERMANY: Major version bumped from 0 to 1, because allegedly this is important. Rest assured, this change is nevertheless backwards compatible.
+
+### v0.12.0 "Angry Butterfly" (July 16th, 2013)
+* FEATURE: javadoc on fields will now be copied to generated getters / setters / withers. There are ways to specify separate javadoc for the field, the setter, and the getter, and `@param` and `@return` are handled appropriately. Addresses feature request [Issue #59](https://code.google.com/p/projectlombok/issues/detail?id=59). [@Getter and @Setter documentation](http://projectlombok.org/features/GetterSetter.html). [@Wither documentation](http://projectlombok.org/features/experimental/Wither.html).
+* CHANGE: The desugaring of @Getter(lazy=true) is now less object creation intensive. Documentation has been updated to reflect what the new desugaring looks like. [@Getter(lazy=true) documentation](http://projectlombok.org/features/GetterLazy.html).
+* PROMOTION: `@Value` has been promoted from experimental to the main package with no changes. The 'old' experimental one is still around but is deprecated, and is an alias for the new main package one. [@Value documentation](http://projectlombok.org/features/Value.html).
+* FEATURE: {Experimental} `@Builder` support. One of our earliest feature request issues, [Issue #16](https://code.google.com/p/projectlombok/issues/detail?id=16), has finally been addressed. [@Builder documentation](http://projectlombok.org/features/experimental/Builder.html).
+* FEATURE: `@NonNull` on a method or constructor parameter now generates a null-check statement at the start of your method. This nullcheck will throw a `NullPointerException` with the name of the parameter as the message. [Issue #514](https://code.google.com/p/projectlombok/issues/detail?id=514)
+* BUGFIX: Usage of `Lombok.sneakyThrow()` or `@SneakyThrows` would sometimes result in invalid classes (classes which fail with `VerifyError`). [Issue #470](https://code.google.com/p/projectlombok/issues/detail?id=470)
+* BUGFIX: Using `val` in try-with-resources did not work for javac. [Issue #520](https://code.google.com/p/projectlombok/issues/detail?id=520)
 * BUGFIX: When using `@Data`, warnings are not generated if certain aspects are not generated because you wrote explicit versions of them. However, this gets confusing with `equals` / `hashCode` / `canEqual`, as nothing is generated if any one of those methods is present. Now, if one of `equals` or `hashCode` is present but not the other one (or `canEqual` is present but `equals` and/or `hashCode` is missing), a warning is emitted to explain that lombok will not generate any of the equals / hashCode methods, and that you should either write them all yourself or remove them all. [Issue #513](https://code.google.com/p/projectlombok/issues/detail?id=513)
+* BUGFIX: Possibly fixed a race condition in patcher [Issue #531](https://code.google.com/p/projectlombok/issues/detail?id=531).
 
 ### v0.11.8 (April 23rd, 2013)
 * FEATURE: Major performance improvements in eclipse by profiling the project clean process.

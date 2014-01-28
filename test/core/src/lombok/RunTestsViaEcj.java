@@ -33,6 +33,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
+import lombok.eclipse.Eclipse;
 import lombok.javac.CapturingDiagnosticListener.CompilerMessage;
 
 import org.eclipse.jdt.core.compiler.CategorizedProblem;
@@ -43,7 +44,6 @@ import org.eclipse.jdt.internal.compiler.IErrorHandlingPolicy;
 import org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration;
 import org.eclipse.jdt.internal.compiler.batch.CompilationUnit;
 import org.eclipse.jdt.internal.compiler.batch.FileSystem;
-import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
 import org.eclipse.jdt.internal.compiler.env.ICompilationUnit;
 import org.eclipse.jdt.internal.compiler.impl.CompilerOptions;
 import org.eclipse.jdt.internal.compiler.problem.DefaultProblemFactory;
@@ -51,9 +51,10 @@ import org.eclipse.jdt.internal.compiler.problem.DefaultProblemFactory;
 public class RunTestsViaEcj extends AbstractRunTests {
 	protected CompilerOptions ecjCompilerOptions() {
 		CompilerOptions options = new CompilerOptions();
-		options.complianceLevel = ClassFileConstants.JDK1_6;
-		options.sourceLevel = ClassFileConstants.JDK1_6;
-		options.targetJDK = ClassFileConstants.JDK1_6;
+		options.complianceLevel = Eclipse.getLatestEcjCompilerVersionConstant();
+		options.sourceLevel = Eclipse.getLatestEcjCompilerVersionConstant();
+		options.targetJDK = Eclipse.getLatestEcjCompilerVersionConstant();
+		options.docCommentSupport = false;
 		options.parseLiteralExpressionsAsConstants = true;
 		options.inlineJsrBytecode = true;
 		options.reportUnusedDeclaredThrownExceptionExemptExceptionAndThrowable = false;
@@ -64,7 +65,6 @@ public class RunTestsViaEcj extends AbstractRunTests {
 		options.reportUnusedParameterWhenOverridingConcrete = false;
 		options.reportDeadCodeInTrivialIfStatement = false;
 		options.generateClassFiles = false;
-		options.docCommentSupport = false;
 		Map<String, String> warnings = new HashMap<String, String>();
 		warnings.put(CompilerOptions.OPTION_ReportUnusedLocal, "ignore");
 		warnings.put(CompilerOptions.OPTION_ReportUnusedLabel, "ignore");
@@ -112,7 +112,7 @@ public class RunTestsViaEcj extends AbstractRunTests {
 		CategorizedProblem[] problems = compilationResult.getAllProblems();
 		
 		if (problems != null) for (CategorizedProblem p : problems) {
-			messages.add(new CompilerMessage(p.getSourceLineNumber(), p.getSourceStart(), p.getSourceStart(), p.isError(), p.getMessage()));
+			messages.add(new CompilerMessage(p.getSourceLineNumber(), p.getSourceStart(), p.isError(), p.getMessage()));
 		}
 		
 		CompilationUnitDeclaration cud = compilationUnit_.get();

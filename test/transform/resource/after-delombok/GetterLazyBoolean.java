@@ -1,6 +1,6 @@
 class GetterLazyBoolean {
-	private final java.util.concurrent.atomic.AtomicReference<java.util.concurrent.atomic.AtomicReference<java.lang.Boolean>> booleanValue = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.atomic.AtomicReference<java.lang.Boolean>>();
-	private final java.util.concurrent.atomic.AtomicReference<java.util.concurrent.atomic.AtomicReference<java.lang.Boolean>> otherBooleanValue = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.atomic.AtomicReference<java.lang.Boolean>>();
+	private final java.util.concurrent.atomic.AtomicReference<java.lang.Object> booleanValue = new java.util.concurrent.atomic.AtomicReference<java.lang.Object>();
+	private final java.util.concurrent.atomic.AtomicReference<java.lang.Object> otherBooleanValue = new java.util.concurrent.atomic.AtomicReference<java.lang.Object>();
 	private static boolean calculateBoolean() {
 		return true;
 	}
@@ -21,9 +21,9 @@ class GetterLazyBoolean {
 	@java.lang.Override
 	@java.lang.SuppressWarnings("all")
 	public int hashCode() {
-		final int PRIME = 31;
+		final int PRIME = 59;
 		int result = 1;
-		result = result * PRIME + (this.isBooleanValue() ? 1231 : 1237);
+		result = result * PRIME + (this.isBooleanValue() ? 79 : 97);
 		return result;
 	}
 	@java.lang.Override
@@ -33,32 +33,32 @@ class GetterLazyBoolean {
 	}
 	@java.lang.SuppressWarnings("all")
 	public boolean isBooleanValue() {
-		java.util.concurrent.atomic.AtomicReference<java.lang.Boolean> value = this.booleanValue.get();
+		java.lang.Object value = this.booleanValue.get();
 		if (value == null) {
 			synchronized (this.booleanValue) {
 				value = this.booleanValue.get();
 				if (value == null) {
 					final boolean actualValue = calculateBoolean();
-					value = new java.util.concurrent.atomic.AtomicReference<java.lang.Boolean>(actualValue);
+					value = actualValue;
 					this.booleanValue.set(value);
 				}
 			}
 		}
-		return value.get();
+		return (java.lang.Boolean)value;
 	}
 	@java.lang.SuppressWarnings("all")
 	public boolean isOtherBooleanValue() {
-		java.util.concurrent.atomic.AtomicReference<java.lang.Boolean> value = this.otherBooleanValue.get();
+		java.lang.Object value = this.otherBooleanValue.get();
 		if (value == null) {
 			synchronized (this.otherBooleanValue) {
 				value = this.otherBooleanValue.get();
 				if (value == null) {
 					final boolean actualValue = !calculateBoolean();
-					value = new java.util.concurrent.atomic.AtomicReference<java.lang.Boolean>(actualValue);
+					value = actualValue;
 					this.otherBooleanValue.set(value);
 				}
 			}
 		}
-		return value.get();
+		return (java.lang.Boolean)value;
 	}
 }
